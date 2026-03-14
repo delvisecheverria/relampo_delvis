@@ -1,7 +1,7 @@
 data_source:
     mode: shared
     name: Data Source
-    path: /Users/delvisecheverria/Downloads/users.csv
+    path: users.csv
     type: csv
     variable_names: email,pass
 http_defaults:
