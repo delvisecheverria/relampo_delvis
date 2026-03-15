@@ -38,19 +38,19 @@ jobs:
       - name: Run worker node
         run: |
           echo "🏁 Starting node ${{ matrix.node }} of 2"
-          SCENARIO_PATH='scenarios/delvis1.yaml'
+          SCENARIO_PATH='scenarios/Relampo.yaml'
           SCENARIO_DIR="$(dirname "$SCENARIO_PATH")"
           SCENARIO_FILE="$(basename "$SCENARIO_PATH")"
           VUS_FLAG=""
-          if [ -n "10" ]; then
-            VUS_FLAG="--vus 10"
+          if [ -n "20" ]; then
+            VUS_FLAG="--vus 20"
           fi
           set -o pipefail
           WORKER_STATUS=0
           (
             cd "$SCENARIO_DIR"
             OUTPUT_FILE="$(mktemp)"
-            echo $'\033[38;5;214m⠸ Esto no es magia, relampo solo está trabajando, pronto te mostraré los resultados.\033[0m'
+            echo $'\033[38;5;214m⠸ Esto no es magia, relampo solo esta trabajando, pronto te mostrare los resultados.\033[0m'
             RELAMPO_P95_ALERT=0
             relampo_extract_stats() {
               local file="$1"
