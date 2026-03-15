@@ -221,6 +221,8 @@ jobs:
             RELAMPO_MEM_TOTAL_MB="$(awk '/MemTotal:/ { print int($2/1024) }' /proc/meminfo 2>/dev/null | head -n1)"
             [ -z "$RELAMPO_MEM_TOTAL_MB" ] && RELAMPO_MEM_TOTAL_MB=0
             RELAMPO_CPU_PS_PEAK=0
+            mkdir -p results
+            RESULTS_RESOURCE_FILE="results/node-${{ matrix.node }}.resources.jsonl"
             relampo_capture_go_sample() {
               local go_dump go_count go_iowait
               go_dump="$(curl -fsS --max-time 3 "http://127.0.0.1:6060/debug/pprof/goroutine?debug=2" 2>/dev/null || true)"
@@ -256,9 +258,12 @@ jobs:
             }
             relampo_capture_process_sample() {
               local worker_pid="$1"
-              local rss_kb cpu_pct rss_mb
+              local rss_kb cpu_pct rss_mb sample_ts mem_pct_sample
               rss_kb="$(ps -p "$worker_pid" -o rss= 2>/dev/null | awk 'NR==1 { print int($1+0) }' || true)"
               cpu_pct="$(ps -p "$worker_pid" -o %cpu= 2>/dev/null | awk 'NR==1 { print $1+0 }' || true)"
+              [ -z "$rss_kb" ] && rss_kb=0
+              [ -z "$cpu_pct" ] && cpu_pct=0
+              rss_mb=0
               if [ -n "$rss_kb" ] && [ "$rss_kb" -gt 0 ]; then
                 rss_mb=$(( (rss_kb + 1023) / 1024 ))
                 if [ "$rss_mb" -gt "$RELAMPO_MEM_PS_PEAK" ]; then
@@ -268,6 +273,12 @@ jobs:
               if [ -n "$cpu_pct" ]; then
                 RELAMPO_CPU_PS_PEAK="$(awk -v a="$RELAMPO_CPU_PS_PEAK" -v b="$cpu_pct" 'BEGIN { if (b > a) printf "%.2f", b; else printf "%.2f", a }')"
               fi
+              mem_pct_sample=0
+              if [ "$RELAMPO_MEM_TOTAL_MB" -gt 0 ]; then
+                mem_pct_sample="$(awk -v m="$rss_mb" -v t="$RELAMPO_MEM_TOTAL_MB" 'BEGIN { if (t > 0) printf "%.4f", (m * 100.0) / t; else printf "0" }')"
+              fi
+              sample_ts="$(date +%s)"
+              printf '{"ts":%s,"mem_mb":%s,"mem_pct":%s,"cpu_pct":%s}\n' "$sample_ts" "$rss_mb" "$mem_pct_sample" "$cpu_pct" >> "$RESULTS_RESOURCE_FILE"
             }
             relampo_jmeter_progress() {
               local worker_pid="$1"
