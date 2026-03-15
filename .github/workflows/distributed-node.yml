@@ -308,13 +308,15 @@ jobs:
             }
             LOG_PIPE="$(mktemp -u)"
             mkfifo "$LOG_PIPE"
-            awk 'BEGIN{esc=sprintf("%c",27)} {raw=$0; line=$0; gsub(esc "\\[[0-9;]*[A-Za-z]", "", line); if (line ~ /^METHOD[[:space:]]+PATH/ || line ~ /^-+/ || line ~ /^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)[[:space:]]+/ || line ~ /Duration:/ || line ~ /Test finished\./ || line ~ /❌/) { print raw; fflush(); }}' < "$LOG_PIPE" > "$OUTPUT_FILE" &
+            awk 'BEGIN{esc=sprintf("%c",27)} {raw=$0; line=$0; gsub(esc "\\[[0-9;]*[A-Za-z]", "", line); if (line ~ /^METHOD[[:space:]]+PATH/ || line ~ /^-+/ || line ~ /^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)[[:space:]]+/ || line ~ /Duration:/ || line ~ /Test finished\./ || line ~ /❌/ || line ~ /failed:/ || line ~ /[Ee]rror/ || line ~ /data_source:/) { print raw; fflush(); }}' < "$LOG_PIPE" > "$OUTPUT_FILE" &
             FILTER_PID=$!
             PULSE_PPROF=1 RELAMPO_WORKER_LOG_MODE=table RELAMPO_WORKER_SNAPSHOT_SECONDS=0 relampo-worker --yaml "$SCENARIO_FILE" --node ${{ matrix.node }} --total 2 $VUS_FLAG > "$LOG_PIPE" 2>&1 &
             WORKER_PID=$!
             relampo_jmeter_progress "$WORKER_PID"
+            set +e
             wait "$WORKER_PID"
             WORKER_STATUS=$?
+            set -e
             wait "$FILTER_PID" || true
             rm -f "$LOG_PIPE"
             relampo_capture_go_sample
@@ -368,7 +370,6 @@ jobs:
             OUT_MEM="$(grep -Eo 'MEM Peak:[[:space:]]*[0-9]+' "$CLEAN_OUTPUT_FILE" | tail -n1 | grep -Eo '[0-9]+' || true)"
             OUT_CPU="$(grep -Eo 'CPU Peak:[[:space:]]*[0-9]+([.][0-9]+)?' "$CLEAN_OUTPUT_FILE" | tail -n1 | grep -Eo '[0-9]+([.][0-9]+)?' || true)"
             OUT_GO="$(grep -Eo 'Go:[[:space:]]*[0-9]+' "$CLEAN_OUTPUT_FILE" | tail -n1 | grep -Eo '[0-9]+' || true)"
-            rm -f "$CLEAN_OUTPUT_FILE"
             [ -z "$OUT_MEM" ] && OUT_MEM=0
             [ -z "$OUT_CPU" ] && OUT_CPU=0
             [ -z "$OUT_GO" ] && OUT_GO=0
@@ -428,6 +429,16 @@ jobs:
             [ -z "$FINAL_TOTAL_COUNT" ] && FINAL_TOTAL_COUNT=0
             [ -z "$FINAL_TOTAL_ERR" ] && FINAL_TOTAL_ERR=0
             [ -z "$FINAL_TOTAL_P95" ] && FINAL_TOTAL_P95=0
+            if [ "$WORKER_STATUS" -ne 0 ]; then
+              FAILURE_LINE="$(grep -E 'failed:|data_source:|no such file or directory|error:' "$CLEAN_OUTPUT_FILE" | tail -n1 || true)"
+              if [ -z "$FAILURE_LINE" ]; then
+                FAILURE_LINE="$(tail -n1 "$CLEAN_OUTPUT_FILE" 2>/dev/null || true)"
+              fi
+              if [ -n "$FAILURE_LINE" ]; then
+                printf '%s\n' "$FAILURE_LINE" > "results/node-${{ matrix.node }}.failure.txt"
+              fi
+            fi
+            rm -f "$CLEAN_OUTPUT_FILE"
             relampo_print_github_diagnosis "$FINAL_TOTAL_COUNT" "$FINAL_TOTAL_ERR" "$FINAL_TOTAL_P95" "$FINAL_MEM" "$FINAL_MEM_PCT" "$FINAL_CPU" "$EXIST_GO_DELTA" "$FINAL_GO_IOWAIT" "$FINAL_GO_IOWAIT_SAMPLES"
             cat "$OUTPUT_FILE"
             rm -f "$OUTPUT_FILE"
@@ -435,6 +446,12 @@ jobs:
           ) || WORKER_STATUS=$?
           mkdir -p results
           printf 'worker_status=%s\n' "$WORKER_STATUS" > "results/node-${{ matrix.node }}.status.txt"
+          if [ -f "$SCENARIO_DIR/results/node-${{ matrix.node }}.failure.txt" ]; then
+            FAILURE_REASON="$(head -n1 "$SCENARIO_DIR/results/node-${{ matrix.node }}.failure.txt" | tr -d '\r' || true)"
+            if [ -n "$FAILURE_REASON" ]; then
+              printf 'worker_error=%s\n' "$FAILURE_REASON" >> "results/node-${{ matrix.node }}.status.txt"
+            fi
+          fi
           if [ -d "$SCENARIO_DIR/results" ]; then
             cp -R "$SCENARIO_DIR/results"/. results/
           else
