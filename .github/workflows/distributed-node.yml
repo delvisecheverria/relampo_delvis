@@ -36,8 +36,10 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Run worker node
+        env:
+          RELAMPO_NODE: ${{ matrix.node }}
         run: |
-          echo "🏁 Starting node ${{ matrix.node }} of 2"
+          echo "🏁 Starting node $RELAMPO_NODE of 2"
           SCENARIO_PATH='scenarios/Relampo.yaml'
           SCENARIO_DIR="$(dirname "$SCENARIO_PATH")"
           SCENARIO_FILE="$(basename "$SCENARIO_PATH")"
@@ -222,7 +224,7 @@ jobs:
             [ -z "$RELAMPO_MEM_TOTAL_MB" ] && RELAMPO_MEM_TOTAL_MB=0
             RELAMPO_CPU_PS_PEAK=0
             mkdir -p results
-            RESULTS_RESOURCE_FILE="results/node-${{ matrix.node }}.resources.jsonl"
+            RESULTS_RESOURCE_FILE="results/node-$RELAMPO_NODE.resources.jsonl"
             relampo_capture_go_sample() {
               local go_dump go_count go_iowait
               go_dump="$(curl -fsS --max-time 3 "http://127.0.0.1:6060/debug/pprof/goroutine?debug=2" 2>/dev/null || true)"
@@ -321,7 +323,7 @@ jobs:
             mkfifo "$LOG_PIPE"
             awk 'BEGIN{esc=sprintf("%c",27)} {raw=$0; line=$0; gsub(esc "\\[[0-9;]*[A-Za-z]", "", line); if (line ~ /^METHOD[[:space:]]+PATH/ || line ~ /^-+/ || line ~ /^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)[[:space:]]+/ || line ~ /Duration:/ || line ~ /Test finished\./ || line ~ /❌/ || line ~ /failed:/ || line ~ /[Ee]rror/ || line ~ /data_source:/) { print raw; fflush(); }}' < "$LOG_PIPE" > "$OUTPUT_FILE" &
             FILTER_PID=$!
-            PULSE_PPROF=1 RELAMPO_WORKER_LOG_MODE=table RELAMPO_WORKER_SNAPSHOT_SECONDS=0 relampo-worker --yaml "$SCENARIO_FILE" --node ${{ matrix.node }} --total 2 $VUS_FLAG > "$LOG_PIPE" 2>&1 &
+            PULSE_PPROF=1 RELAMPO_WORKER_LOG_MODE=table RELAMPO_WORKER_SNAPSHOT_SECONDS=0 relampo-worker --yaml "$SCENARIO_FILE" --node "$RELAMPO_NODE" --total 2 $VUS_FLAG > "$LOG_PIPE" 2>&1 &
             WORKER_PID=$!
             relampo_jmeter_progress "$WORKER_PID"
             set +e
@@ -332,7 +334,7 @@ jobs:
             rm -f "$LOG_PIPE"
             relampo_capture_go_sample
             mkdir -p results
-            PEAKS_FILE="results/node-${{ matrix.node }}.peaks.json"
+            PEAKS_FILE="results/node-$RELAMPO_NODE.peaks.json"
             EXIST_MEM="$(grep -Eo '"mem_peak_mb"[[:space:]]*:[[:space:]]*[0-9]+' "$PEAKS_FILE" 2>/dev/null | tail -n1 | grep -Eo '[0-9]+' || true)"
             EXIST_CPU="$(grep -Eo '"cpu_peak"[[:space:]]*:[[:space:]]*[0-9]+([.][0-9]+)?' "$PEAKS_FILE" 2>/dev/null | tail -n1 | grep -Eo '[0-9]+([.][0-9]+)?' || true)"
             EXIST_GO="$(grep -Eo '"go_peak"[[:space:]]*:[[:space:]]*[0-9]+' "$PEAKS_FILE" 2>/dev/null | tail -n1 | grep -Eo '[0-9]+' || true)"
@@ -446,7 +448,7 @@ jobs:
                 FAILURE_LINE="$(tail -n1 "$CLEAN_OUTPUT_FILE" 2>/dev/null || true)"
               fi
               if [ -n "$FAILURE_LINE" ]; then
-                printf '%s\n' "$FAILURE_LINE" > "results/node-${{ matrix.node }}.failure.txt"
+                printf '%s\n' "$FAILURE_LINE" > "results/node-$RELAMPO_NODE.failure.txt"
               fi
             fi
             rm -f "$CLEAN_OUTPUT_FILE"
@@ -456,17 +458,17 @@ jobs:
             exit "$WORKER_STATUS"
           ) || WORKER_STATUS=$?
           mkdir -p results
-          printf 'worker_status=%s\n' "$WORKER_STATUS" > "results/node-${{ matrix.node }}.status.txt"
-          if [ -f "$SCENARIO_DIR/results/node-${{ matrix.node }}.failure.txt" ]; then
-            FAILURE_REASON="$(head -n1 "$SCENARIO_DIR/results/node-${{ matrix.node }}.failure.txt" | tr -d '\r' || true)"
+          printf 'worker_status=%s\n' "$WORKER_STATUS" > "results/node-$RELAMPO_NODE.status.txt"
+          if [ -f "$SCENARIO_DIR/results/node-$RELAMPO_NODE.failure.txt" ]; then
+            FAILURE_REASON="$(head -n1 "$SCENARIO_DIR/results/node-$RELAMPO_NODE.failure.txt" | tr -d '\r' || true)"
             if [ -n "$FAILURE_REASON" ]; then
-              printf 'worker_error=%s\n' "$FAILURE_REASON" >> "results/node-${{ matrix.node }}.status.txt"
+              printf 'worker_error=%s\n' "$FAILURE_REASON" >> "results/node-$RELAMPO_NODE.status.txt"
             fi
           fi
           if [ -d "$SCENARIO_DIR/results" ]; then
             cp -R "$SCENARIO_DIR/results"/. results/
           else
-            echo "results directory not found in scenario path: $SCENARIO_DIR/results" >> "results/node-${{ matrix.node }}.status.txt"
+            echo "results directory not found in scenario path: $SCENARIO_DIR/results" >> "results/node-$RELAMPO_NODE.status.txt"
           fi
           exit "$WORKER_STATUS"
 
