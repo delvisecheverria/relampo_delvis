@@ -17,9 +17,9 @@ scenarios:
       load:
         duration: 10m
         iterations: "0"
-        ramp_up: "1"
+        ramp_up: 5m
         type: constant
-        users: "1"
+        users: "100"
       name: Recorded Scenario
       steps:
         - request:
